@@ -1,0 +1,793 @@
+<!--
+
+Bitcoin Cash orb
+
+Copyright © 2023 Jonas Lundqvist <jonas@gannon.se>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>The Orb</title>
+    <script src="https://cdn.mainnet.cash/mainnet-1.1.32.js"
+    integrity="sha384-Zb1iMm9dB26u1l0jMCd3MMuLwixyc9rvmv4hk/JMNJM7jVM66TQJpKPSD3eoqSUz"
+    crossorigin="anonymous"></script>
+    <script src="https://cdn.mainnet.cash/contract/contract-1.1.32.js"
+    integrity="sha384-jeBWJN3vBFMkN/jv5gcH2zWHbajxwKfrvoc2dQYdnjFiklymZHGU5baAcHzW4ZQF"
+    crossorigin="anonymous"></script>    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/utf8/3.0.0/utf8.min.js"
+    crossorigin="anonymous"
+    integrity="sha512-Up/VFqLmUsS5GMd4XTuxE6NsCsBJlPv12A9apHDqRx8v/x+++Qmmg2M1kTs8cQztxHk0d/rgAqmVOjzEKBZH7A=="></script>
+</head>
+<body>
+    <script>
+        function askClicked() {
+            document.getElementById("refillForm").style.display = "none";
+            document.getElementById("buyForm").style.display = "none";
+            document.getElementById("askForm").style.display = "block";
+            document.getElementById("submitDiv").style.display = "block";
+            document.getElementById("submitAction").value = "Ask Orb";
+        }
+        function refillClicked() {
+            document.getElementById("refillForm").style.display = "block";
+            document.getElementById("buyForm").style.display = "none";
+            document.getElementById("askForm").style.display = "none";
+            document.getElementById("submitDiv").style.display = "block";
+            document.getElementById("submitAction").value = "Refill Orb";
+        }
+        function buyClicked() {
+            document.getElementById("refillForm").style.display = "none";
+            document.getElementById("buyForm").style.display = "block";
+            document.getElementById("askForm").style.display = "none";
+            document.getElementById("submitDiv").style.display = "block";
+            document.getElementById("submitAction").value = "Buy Orb";
+        }
+        function resetClicked() {
+            document.getElementById("refillForm").style.display = "none";
+            document.getElementById("buyForm").style.display = "none";
+            document.getElementById("askForm").style.display = "none";
+            document.getElementById("submitDiv").style.display = "block";
+            document.getElementById("submitAction").value = "Reset Orb";
+        }
+        function toggleShowSheed() {
+            if (document.getElementById("showSeedBox").checked) {
+                document.getElementById("seedDiv").innerHTML = document.getElementById("seed").value;
+            } else {
+                document.getElementById("seedDiv").innerHTML = "";
+            }
+        }
+        document.addEventListener("DOMContentLoaded", async (event) => {
+            // Stolen from https://stackoverflow.com/questions/40031688/javascript-arraybuffer-to-hex
+            function buf2hex(buffer) {
+                return [...new Uint8Array(buffer)]
+                    .map(x => x.toString(16).padStart(2, '0'))
+                    .join('');
+            }
+            const ORACLE_PUBKEY = new Uint8Array([105,82,205,47,221,77,4,197,198,16,112,224,250,179,85,85,183,72,65,243]);
+            console.log("ORACLE_PUBKEY " + ORACLE_PUBKEY);
+            function hex_to_ascii(str1) {
+                var hex  = str1.toString();
+                var str = '';
+                for (var n = 0; n < hex.length; n += 2) {
+                    str += String.fromCharCode(parseInt(hex.substr(n, 2), 16));
+                }
+                return utf8.decode(str);
+            }
+
+            function hexStringToUint8Array(hexString){
+                if (hexString.length % 2 !== 0){
+                    throw "Invalid hexString";
+                }/*from  w w w.  j  av a 2s  . c  o  m*/
+                var arrayBuffer = new Uint8Array(hexString.length / 2);
+
+                for (var i = 0; i < hexString.length; i += 2) {
+                    var byteValue = parseInt(hexString.substr(i, 2), 16);
+                    if (isNaN(byteValue)){
+                    throw "Invalid hexString";
+                    }
+                    arrayBuffer[i/2] = byteValue;
+                }
+
+                return arrayBuffer;
+            }            
+
+            // Stolen from https://coolaj86.com/articles/convert-decimal-to-hex-with-js-bigints/
+            // ---------------------------------------------------------------------------------
+            function bnToHex(bn) {
+                var pos = true;
+                bn = BigInt(bn);
+
+                // I've noticed that for some operations BigInts can
+                // only be compared to other BigInts (even small ones).
+                // However, <, >, and == allow mix and match
+                if (bn < 0) {
+                    pos = false;
+                    bn = bitnot(bn);
+                }
+
+                var base = 16;
+                var hex = bn.toString(base);
+                if (hex.length % 2) {
+                    hex = '0' + hex;
+                }
+
+                // Check the high byte _after_ proper hex padding
+                var highbyte = parseInt(hex.slice(0, 2), 16);
+                var highbit = (0x80 & highbyte);
+
+                if (pos && highbit) {
+                    // A 32-byte positive integer _may_ be
+                    // represented in memory as 33 bytes if needed
+                    hex = '00' + hex;
+                }
+
+                return hex;
+            }
+
+            function bitnot(bn) {
+                // JavaScript's bitwise not doesn't work on negative BigInts (bn = ~bn; // WRONG!)
+                // so we manually implement our own two's compliment (flip bits, add one)
+                bn = -bn;
+                var bin = (bn).toString(2)
+                var prefix = '';
+                while (bin.length % 8) {
+                    bin = '0' + bin;
+                }
+                if ('1' === bin[0] && -1 !== bin.slice(1).indexOf('1')) {
+                    prefix = '11111111';
+                }
+                bin = bin.split('').map(function (i) {
+                    return '0' === i ? '1' : '0';
+                }).join('');
+                return BigInt('0b' + prefix + bin) + BigInt(1);
+            }
+            // End stolen from https://coolaj86.com/articles/convert-decimal-to-hex-with-js-bigints/
+            // ---------------------------------------------------------------------------------
+            const changeEndianness = (string) => {
+                    const result = [];
+                    let len = string.length - 2;
+                    while (len >= 0) {
+                    result.push(string.substr(len, 2));
+                    len -= 2;
+                    }
+                    return result.join('');
+            }            
+            function padToBytes(hex, numBytes) {
+                strlen = hex.length;
+                outStr = changeEndianness(hex);
+                while (strlen < numBytes*2) {
+                    outStr = outStr + "00";
+                    strlen += 2;
+                }
+                //console.log("padToBytes("+ hex+","+numBytes+"): " + outStr);
+                return outStr;
+            }
+            function getParameterByName(name, url = window.location.href) {
+                name = name.replace(/[\[\]]/g, '\\$&');
+                var regex = new RegExp('[?&]' + name + '(=([^&#]*)|&|#|$)'),
+                    results = regex.exec(url);
+                if (!results) return null;
+                if (!results[2]) return '';
+                return decodeURIComponent(results[2].replace(/\+/g, ' '));
+            }
+            const script = `
+pragma cashscript ^0.8.0;
+
+contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPeriod, bytes4 LatestPurchaseBlock, bytes4 NextMsgBlock) {
+
+    // Note: There is a possibility to squeeze out a few opcodes by hardcoding OraclePHK
+    // instead of having it as a constructor.
+
+    function AskOrb(pubkey OwnerKey, sig OwnerSig) {
+        // Orb not in cooldown
+        require(tx.locktime >= int(NextMsgBlock));
+        // Taxes have been payed
+        require(tx.locktime < (int(LatestPurchaseBlock) + int(TaxPeriod)));
+
+        // Only owner can ask
+        require(hash160(OwnerKey) == OwnerPKH);
+        require(checkSig(OwnerSig, OwnerKey));
+
+        // Create new contract with cooldown for 24 h
+        int NewNextMsgBlock = tx.locktime + 144;
+        bytes newContract = 0x04 + bytes4(NewNextMsgBlock) + this.activeBytecode.split(5)[1];
+        bytes23 newContractLock = new LockingBytecodeP2SH20(hash160(newContract));
+        require(tx.outputs[0].lockingBytecode == newContractLock);
+
+        // Move all funds to the new contract
+        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);
+    }
+
+    function BuyOrb(bytes20 NewOwnerPKH, int NewTaxperiod, int NewPrice) {
+        // At least 546 sats/day in taxes (66430), otherwise the orb is unspendable for too long.
+        require(NewPrice > 66430);
+        // You can only buy if the taxes have been payed
+        int LatestPurchaseBlockInt = int(LatestPurchaseBlock);
+        require(tx.locktime <= LatestPurchaseBlockInt + int(TaxPeriod));
+        // Don't go back in time
+        require(tx.locktime >= LatestPurchaseBlockInt);
+
+        // 144*365 = 52560 -> Blocks per year. 300% yearly tax -> 52560/3 -> Price/17520 per block
+        int PrevPeriodTax = ((int(TaxPeriod) * int(SellPrice)) / (17520));
+        int RemaningTax = PrevPeriodTax - ((tx.locktime - LatestPurchaseBlockInt) * int(SellPrice) / 17520);
+
+        // Create a new contract funded with taxes for the entire period.
+        bytes NewContract = 0x04 + bytes4(NextMsgBlock) +
+                            0x04 + bytes4(tx.locktime) +
+                            0x04 + bytes4(NewTaxperiod) +
+                            0x08 + bytes8(NewPrice) +
+                            0x14 + bytes20(NewOwnerPKH) +
+                            this.activeBytecode.split(45)[1];
+        bytes23 NewContractLock = new LockingBytecodeP2SH20(hash160(NewContract));
+        require(tx.outputs[0].lockingBytecode == NewContractLock);
+        require(tx.outputs[0].value >= (NewTaxperiod * NewPrice) / 17520);
+
+        // Give the asked price and the tax refund to the previous owner
+        bytes25 PrevOwnerLockingBytecode = new LockingBytecodeP2PKH(OwnerPKH);
+        require(tx.outputs[1].lockingBytecode == PrevOwnerLockingBytecode);
+        require(tx.outputs[1].value >= int(SellPrice) + RemaningTax);
+
+        // Give the oracle 75% of the taxes for the previous period.
+        bytes25 OracleLockingBytecode = new LockingBytecodeP2PKH(OraclePKH);
+        require(tx.outputs[2].lockingBytecode == OracleLockingBytecode);
+        require(tx.outputs[2].value >= (3 * (PrevPeriodTax - RemaningTax)) / 4);
+
+        // Let the new owner spend the remaining 25% of ConsumedTax.
+        // This incentivises a recent locktime
+    }
+
+    function RefillOrb(int NewTaxperiod) {
+        // Let anyone pay the taxes
+        require(NewTaxperiod > int(TaxPeriod));
+        int PeriodTax = ((NewTaxperiod * int(SellPrice)) / (17520));
+
+        bytes NewContract = 0x04 + bytes4(NextMsgBlock) +
+                            0x04 + bytes4(LatestPurchaseBlock) +
+                            0x04 + bytes4(NewTaxperiod) +
+                            this.activeBytecode.split(15)[1];
+        bytes23 NewContractLock = new LockingBytecodeP2SH20(hash160(NewContract));
+        require(tx.outputs[0].lockingBytecode == NewContractLock);
+        require(tx.outputs[0].value >= PeriodTax);
+    }
+
+    function ResetOrb(pubkey OracleKey, sig OracleSig) {
+        // The oracle can reset the orb is there isn't enough juice
+        require(tx.locktime > (int(LatestPurchaseBlock) + int(TaxPeriod)));
+        require(hash160(OracleKey) == OraclePKH);
+        require(checkSig(OracleSig, OracleKey));
+    }
+}
+`
+            globalThis.exports = globalThis.exports || {};
+            Object.assign(globalThis, await __mainnetPromise);
+            Object.assign(globalThis, await __contractPromise);
+            let seedForm = document.getElementById("seedform");
+
+            const walletExists = await TestNetWallet.namedExists('user:12345');
+
+            seedForm.addEventListener("submit", async (e) => {
+                e.preventDefault();
+                let seedInput = document.getElementById("seed");
+                let pathInput = document.getElementById("derivationpath");
+
+                if (seed.value != "" && seed.value.split(" ").length == 12) {
+                    const seed = seedInput.value;
+                    const path = pathInput.value;
+                    const walletId = `seed:testnet:${seed}:${path}`;
+                    const wallet = await TestNetWallet.replaceNamed('user:12345', walletId);
+                    location.reload();
+                }
+            });
+
+            wallet = false;
+            if (walletExists) {
+                wallet = await TestNetWallet.named('user:12345');
+                addr = await wallet.getDepositAddress();
+                console.log("Wallet pubkey: " + await wallet.getPublicKeyCompressed());
+                console.log("Wallet pubkeyhash: " + await wallet.getPublicKeyHash());
+                console.log("Wallet addr: " + addr);
+
+                funds = await wallet.getBalance('sat');
+                const seed = wallet.getSeed();
+
+                document.getElementById("seed").value = seed.seed;
+                document.getElementById("derivationpath").value = seed.derivationPath;
+
+                document.getElementById("deposit").innerHTML = addr;
+                document.getElementById("funds").innerHTML = funds;
+            }
+
+            console.log("parameters: " +window.location.href);
+            splittedQ = window.location.href.split("#")[0].split("?");
+            console.log("splittedQ: "+JSON.stringify(splittedQ));
+            if (splittedQ.length > 1) {
+                splittedParams = splittedQ[1].split("&");
+                for (a in splittedParams) {
+                    console.log("a: "+splittedParams[a]);
+                    splittedAnswer = splittedParams[a].split("=");
+                    if (splittedAnswer[1].length > 0) {
+                        console.log("An answer to " + splittedAnswer[0].slice(5, splittedAnswer[0].length) + " is: " + decodeURI(splittedAnswer[1]));
+                        TxHist = await wallet.getUtxos();
+                        let UtxoToSpend = false;
+                        for (Utxo in TxHist) {
+                            if (TxHist[Utxo]["satoshis"] > 600) {
+                                console.log("Selecting: " + JSON.stringify(TxHist[Utxo]));
+                                UtxoToSpend = TxHist[Utxo]["txid"]+":"+TxHist[Utxo]["vout"]+":"+TxHist[Utxo]["satoshis"];
+                                break;
+                            }
+                        }
+                        console.log("Using UtxoToSpend: " + JSON.stringify(UtxoToSpend));
+                        console.log("Also using: " + JSON.stringify(splittedAnswer[0].slice(5, splittedAnswer[0].length)+":2:546"));
+                        const opreturnData = OpReturnData.fromArray(["ORBQ", decodeURI(splittedAnswer[1])]);
+                        tx = await wallet.send([opreturnData], { 
+                            changeAddress: wallet.getDepositAddress(),
+                            utxoIds: [splittedAnswer[0].slice(5, splittedAnswer[0].length)+":2:546", UtxoToSpend]
+                        });
+                    }
+                    for (b in splittedAnswer) {
+                        console.log("b: "+splittedAnswer[b]);
+                    }
+                }
+            }
+
+            async function ParseContract(UTXO, Addr, OraclePKH, OwnerPKH, SellPrice, TaxPeriod, LatestPurchaseBlock, NextMsgBlock, History, OracleAnswers) {      
+                spentUtxo = false;
+                spentUtxoHeigth = 0;
+                newUtxo = false;
+                let decodedTx = false;
+                let parseWallet = await TestNetWallet.watchOnly(Addr);
+                const TxHistory = await parseWallet.getRawHistory();
+                
+                console.log("History of address " + Addr + ": " + JSON.stringify(TxHistory));
+                for (Tx in TxHistory) {
+                    TxHash = TxHistory[Tx]["tx_hash"];
+                    decodedTx = await parseWallet.util.decodeTransaction(TxHash, true);
+                    for (Vin in decodedTx["vin"]) {
+                        if (decodedTx["vin"][Vin]["txid"] == UTXO["txid"] && decodedTx["vin"][Vin]["vout"] == 0) {
+                            console.log("Contract spent!");
+                            spentUtxo = decodedTx["vin"][Vin];
+                            spentUtxoTx = TxHistory[Tx];
+                            newUtxo = {"txid": decodedTx["txid"], "vout": 0, "height": 0, "satoshis": Math.round((parseFloat(decodedTx["vout"][0]["value"])*100000000))};
+                            break;
+                        }
+                    }
+                }
+                console.log("spent: " + JSON.stringify(spentUtxo) + " -> " + JSON.stringify(newUtxo));     
+
+                if (spentUtxo == false) {
+                    return {UTXO, OwnerPKH, SellPrice, TaxPeriod, LatestPurchaseBlock, NextMsgBlock, History};
+                } else {
+                    NewOwnerPKH = OwnerPKH;
+                    NewSellPrice = SellPrice;
+                    NewTaxPeriod = TaxPeriod;
+                    NewLatestPurchaseBlock = LatestPurchaseBlock;
+                    NewMsgBlock = NextMsgBlock;
+                    // Parse all new parameters from tx hash
+                    const spendingHeight = spentUtxoTx['height'] == "-1" ? "just now" : "at block " + spentUtxoTx['height'];
+                    const Bytes = spentUtxo["scriptSig"]["hex"];
+                    const ActionByte = Bytes.substring((Bytes.length-((387+3)*2)-2), (Bytes.length-((387+3)*2)));
+                    console.log("ActionByte: " + ActionByte);
+                    if (ActionByte == "52") { //OP_2 -- RefillOrb
+                        // Refill
+                        NewTaxPeriod = parseInt(changeEndianness(Bytes.substring(2, 6)), 16);
+                        console.log("NewTaxPeriod: " + NewTaxPeriod);
+                        History.push("Refilled " + spendingHeight + " in " + spentUtxoTx['tx_hash']);
+                    } else if (ActionByte == "51") { // OP_1 -- BuyOrb
+                        NewLatestPurchaseBlock = decodedTx["locktime"];
+                        pos = 0;
+                        console.log("Bytes: " + Bytes);
+                        push = parseInt(changeEndianness(Bytes.substring(pos, (pos+2))), 16);
+                        pos += 2;
+                        console.log("Pushed bytes: " + push);
+                        NewSellPrice = parseInt(changeEndianness(Bytes.substring(pos, pos+(push*2))), 16);
+                        pos += push*2;
+                        console.log("NewSellPrice: " + NewSellPrice);
+
+                        push = parseInt(changeEndianness(Bytes.substring(pos, pos+2)), 16);
+                        pos += 2;
+                        NewTaxPeriod = parseInt(changeEndianness(Bytes.substring(pos, pos+(push*2))), 16);
+                        console.log("NewTaxPeriod: " + NewTaxPeriod);
+
+                        pos += push*2;
+
+                        push = parseInt(changeEndianness(Bytes.substring(pos, pos+2)), 16);
+                        pos += 2;
+                        NewOwnerPKH = hexStringToUint8Array(Bytes.substring(pos, pos+(push*2)));
+                        History.push("Orb bought by: "+ toCashaddr(deriveTokenaddr(NewOwnerPKH, "bchtest"))+" for " + SellPrice + " with new price " + NewSellPrice);
+                    } else if (ActionByte == "00") { //OP_0 -- AskOrb
+                        AskTx = await parseWallet.util.decodeTransaction(spentUtxoTx['tx_hash'], true);
+                        NewMsgBlock = BigInt(decodedTx["locktime"]) + 144n;
+                        console.log("NewMsgBlock: " + NewMsgBlock);
+                        questionphex = AskTx["vout"][1]["scriptPubKey"]["hex"].substring(0, 12);
+                        questionqhex = AskTx["vout"][1]["scriptPubKey"]["hex"].substring(14, AskTx["vout"][1]["scriptPubKey"]["hex"].length);
+
+                        console.log("Question: " + hex_to_ascii(questionqhex));
+                        History.push("Question asked " + spendingHeight + " in " + spentUtxoTx['tx_hash'] +": <blockquote>"+hex_to_ascii(questionqhex)+"</blockquote>");
+                        const QHash = spentUtxoTx['tx_hash'];
+                        console.log("QHash: " + QHash);
+                        if (OracleAnswers[QHash]) {
+                            History.push("Question answered: <blockquote>"+OracleAnswers[QHash]+"</blockquote>");
+                        } else {
+                            document.getElementById("questionchoice").innerHTML += hex_to_ascii(questionqhex) + ": <input name=\"QHash"+QHash+"\" type=\"text\"><br />";
+                        }
+                    } else if (ActionByte == "53") { //OP_3 -- ResetOrb
+                        History.push("Orb reset!");
+                        NewOwnerPKH = ORACLE_PUBKEY;
+                        NewSellPrice = 100000000n;
+                        NewLatestPurchaseBlock = decodedTx["locktime"];
+                        NewTaxPeriod = 144;
+                        NewMsgBlock = BigInt(decodedTx["locktime"]) + 144n;
+                    }
+
+                    let NextContract = new Contract(
+                        script,
+                        [ORACLE_PUBKEY,
+                        NewOwnerPKH,
+                        padToBytes(bnToHex(NewSellPrice), 8),
+                        padToBytes(bnToHex(NewTaxPeriod), 4),
+                        padToBytes(bnToHex(NewLatestPurchaseBlock), 4),
+                        padToBytes(bnToHex(NewMsgBlock), 4)],
+                        Network.TESTNET
+                    );
+                    return ParseContract(newUtxo, NextContract.getDepositAddress(), OraclePKH, NewOwnerPKH, NewSellPrice, NewTaxPeriod, NewLatestPurchaseBlock, NewMsgBlock, History, OracleAnswers);
+                }
+            }
+            let NewContract = new Contract(
+                        script,
+                        [ORACLE_PUBKEY,
+                        ORACLE_PUBKEY,
+                        padToBytes(bnToHex(100000000n), 8),
+                        padToBytes(bnToHex(144n), 4),
+                        padToBytes(bnToHex(159036), 4),
+                        padToBytes(bnToHex(159036n), 4)],
+                        Network.TESTNET
+                    );
+            const depoaddr = await NewContract.getDepositAddress();
+            console.log("depositaddress: " + depoaddr);
+
+            const GenesisUTXO = {"txid":"fb80f47b7be27e7ca7a04e3b75d328b101d246f2b21a4de5d257fdd60018f048","vout":0,"satoshis":1000000,"height":159053};
+            const GenesisAddr = "bchtest:pqt6438zqs0ec5nshjxqkd73252k8n4wzg6zkaflzx";
+            
+            let conn = new Connection(
+                "bchtest",
+                "wss://chipnet.imaginary.cash:50004"
+            )
+            currentHeight = await conn.networkProvider.getBlockHeight();
+
+            // Get all Oracle transactions but keep the "answers"
+            let OracleAnswers = {};
+            const OracleAddr = toCashaddr(deriveTokenaddr(ORACLE_PUBKEY, "bchtest"));
+            let OracleWallet = await TestNetWallet.watchOnly(OracleAddr);
+            const OracleHistory = await OracleWallet.getRawHistory();
+            for (Tx in OracleHistory) {
+                TxHash = OracleHistory[Tx]["tx_hash"];
+                decodedOrcaleTx = await OracleWallet.util.decodeTransaction(TxHash, false);
+                datapush = decodedOrcaleTx["vout"][0]["scriptPubKey"]["hex"].substring(0, 12);
+                // TODO: Also check that vin0 is signed with the Oracle PUBKEY.
+                if (decodedOrcaleTx["vout"][0]["value"] == 0 && datapush == "6a044f524251") {
+                    answerstring = decodedOrcaleTx["vout"][0]["scriptPubKey"]["hex"].substring(14, decodedOrcaleTx["vout"][0]["scriptPubKey"]["hex"].length);
+                    answerstring = hex_to_ascii(answerstring).replace(/\+/g, ' ');
+                    console.log("Found an answer: " + JSON.stringify(answerstring));
+                    OracleAnswers[decodedOrcaleTx["vin"][0]["txid"]] = answerstring;                    
+                }
+            }
+            console.log("Answers: " + JSON.stringify(OracleAnswers));
+            ContractTipParams = await ParseContract(GenesisUTXO,
+                                    GenesisAddr,
+                                    ORACLE_PUBKEY,
+                                    ORACLE_PUBKEY,
+                                    100000000n,
+                                    144n,
+                                    159036,
+                                    159036n,
+                                    Array("Genesis at block 159053"),
+                                    OracleAnswers
+                                );
+            console.log("ContractTipParams" + JSON.stringify(ContractTipParams, (key, value) => typeof value === 'bigint' ? value.toString() : value));
+
+            function arrayEquals(arr1, arr2) {
+                if (arr1.length != arr2.length) return false;
+                for (a in arr1) {
+                    if (arr1[a] != arr2[a]) return false;
+                }
+                return true;
+            }
+
+            const RemainingJuice = BigInt(ContractTipParams["LatestPurchaseBlock"]) + BigInt(ContractTipParams["TaxPeriod"]) - BigInt(currentHeight);
+            const CooldownBlocks = ContractTipParams["NextMsgBlock"] - BigInt(currentHeight);
+
+            if (wallet != false && arrayEquals(wallet.getPublicKeyHash(), ContractTipParams["OwnerPKH"]) && (CooldownBlocks < 0) && (RemainingJuice > 0)) {
+                document.getElementById("askBtnDiv").style.display = "block";
+            }
+
+            if (wallet != false && arrayEquals(wallet.getPublicKeyHash(), ORACLE_PUBKEY)) {
+                if (RemainingJuice <= 0) {
+                    document.getElementById("resetBtnDiv").style.display = "block";
+                }
+                document.getElementById("question").style.display = "block";
+            }
+
+            if (wallet != false) {
+                document.getElementById("refillBtnDiv").style.display = "block";
+            }
+
+            if (wallet != false && !arrayEquals(wallet.getPublicKeyHash(), ContractTipParams["OwnerPKH"]) && (RemainingJuice > 0)) {
+                document.getElementById("buyBtnDiv").style.display = "block";
+            }
+
+            document.getElementById("submitAction").style.display = "block";
+
+            document.getElementById("orbOwner").innerHTML = await toCashaddr(deriveTokenaddr(ContractTipParams["OwnerPKH"], "bchtest"));
+            for (hist in ContractTipParams["History"]) {
+                document.getElementById("orbHistory").innerHTML += ContractTipParams["History"][hist].toString() + "<br />";
+            }
+            
+            let actionform = document.getElementById("doaction");
+            document.getElementById("currOwnerFormVal").value = ContractTipParams["OwnerPKH"];
+            document.getElementById("currSellPriceFormVal").value = ContractTipParams["SellPrice"];
+            document.getElementById("currTaxperiodFormVal").value = ContractTipParams["TaxPeriod"];
+            document.getElementById("currLatestPurchaseBlockFormVal").value = ContractTipParams["LatestPurchaseBlock"];
+            document.getElementById("currNextMsgBlockFormVal").value = ContractTipParams["NextMsgBlock"];
+            document.getElementById("currBlockTime").value = currentHeight;
+            
+            document.getElementById("remainingJuice").innerHTML = "Remaining juice: " + (BigInt(ContractTipParams["LatestPurchaseBlock"]) + BigInt(ContractTipParams["TaxPeriod"]) - BigInt(currentHeight)) + " blocks";
+            if (CooldownBlocks > 0) {
+                document.getElementById("orbCooldown").innerHTML = "Remaining cooldown: " + CooldownBlocks + " blocks";
+            }
+            document.getElementById("currentSellPriceDiv").innerHTML = "Current sell price: " + (BigInt(ContractTipParams["SellPrice"])) + " sats";
+            const currentTaxPerDay = Math.ceil(((3 * Number(ContractTipParams["SellPrice"])) / (52560))* 144);
+            document.getElementById("currentTaxDiv").innerHTML = "Current tax: " + currentTaxPerDay + " sats per day";
+
+            // Everything is parsed -- Do some action!
+            actionform.addEventListener("submit", async (e) => {
+                try {
+                    e.preventDefault();
+                    wallet = await TestNetWallet.named('user:12345');
+
+                    ownerArr = document.getElementById("currOwnerFormVal").value.split(",");
+                    currOwnerArr = Array();
+                    for (a in ownerArr) {
+                        currOwnerArr.push(ownerArr[a]);
+                    }
+                    currOwnerPKH = nextOwnerPKH = new Uint8Array(currOwnerArr);
+                    currSellPrice = nextSellPrice = BigInt(document.getElementById("currSellPriceFormVal").value);
+                    currTaxperiod = nextTaxperiod = BigInt(document.getElementById("currTaxperiodFormVal").value);
+                    currLatestPurchaseBlock = nextLatestPurchaseBlock = BigInt(document.getElementById("currLatestPurchaseBlockFormVal").value);
+                    currNextMsgBlock = nextNextMsgBlock = BigInt(document.getElementById("currNextMsgBlockFormVal").value);
+                    currBlockTime = document.getElementById("currBlockTime").value;
+
+                    let CurrContract = new Contract(
+                                script,
+                                [ORACLE_PUBKEY,
+                                currOwnerPKH,
+                                padToBytes(bnToHex(currSellPrice), 8),
+                                padToBytes(bnToHex(currTaxperiod), 4),
+                                padToBytes(bnToHex(currLatestPurchaseBlock), 4),
+                                padToBytes(bnToHex(currNextMsgBlock), 4)],
+                                Network.TESTNET
+                    );
+
+                    let SpendingFunc = false;
+                    let SatsInNewContract = 0n; // New sats the user has to pay
+                    spendingUtxo = [ContractTipParams["UTXO"]].map(toCashScript);
+                    additionalOutputs = Array();
+                    let TotalOutputsSats = 0n;
+                    if (document.getElementById("refillBtn").checked) {
+                        AdditionalPeriod = BigInt(document.getElementById("refillText").value);
+                        nextTaxperiod = BigInt(currTaxperiod) + AdditionalPeriod;
+                        console.log("Refill with " + AdditionalPeriod);
+                        let ContractFunc = await CurrContract.getContractFunction("RefillOrb");
+                        SpendingFunc = await ContractFunc(nextTaxperiod);
+                        SatsInNewContract = BigInt(Math.ceil((3 * Number(nextTaxperiod) * Number(currSellPrice)) / (52560)));
+                    } else  if (document.getElementById("askBtn").checked) {
+                        let ContractFunc = await CurrContract.getContractFunction("AskOrb");
+                        const sig = await getSignatureTemplate(wallet);
+                        SpendingFunc = await ContractFunc(wallet.getPublicKeyCompressed(), sig);
+                        nextNextMsgBlock = BigInt(currBlockTime) + 144n;
+                        SatsInNewContract = BigInt(spendingUtxo[0]["satoshis"]);
+                        console.log("nextNextMsgBlock: " + nextNextMsgBlock);
+                        console.log("currBlockTime: " + currBlockTime);
+                        outPut = {data: ["ORBQ", document.getElementById("askText").value], sats: 0n};
+                        additionalOutputs.push(outPut);
+                        outPut = {to: await toCashaddr(deriveTokenaddr(ORACLE_PUBKEY, "bchtest")), sats: 546n };
+                        additionalOutputs.push(outPut);
+                    } else  if (document.getElementById("buyBtn").checked) {
+                        nextOwnerPKH = await wallet.getPublicKeyHash();
+                        nextTaxperiod = BigInt(document.getElementById("buyPeriod").value);
+                        nextSellPrice = BigInt(document.getElementById("buyPrice").value);
+                        nextLatestPurchaseBlock = BigInt(currBlockTime);
+                        console.log("nextTaxperiod: " + nextTaxperiod);
+                        console.log("nextSellPrice: " + nextSellPrice);
+                        console.log("nextOwnerPKH: " + nextOwnerPKH);
+                        let ContractFunc = await CurrContract.getContractFunction("BuyOrb");
+                        SpendingFunc = await ContractFunc(nextOwnerPKH, nextTaxperiod, nextSellPrice);
+                        SatsInNewContract = (3n * nextTaxperiod * nextSellPrice) / 52560n;
+
+                        const PrevPeriodTax = BigInt((3n * currTaxperiod * currSellPrice) / (52560n));
+                        const RemainingTax = BigInt(PrevPeriodTax) - ((3n * (BigInt(currBlockTime) - currLatestPurchaseBlock) * currSellPrice) / 52560n); 
+                        console.log("currBlockTime: " + currBlockTime);
+                        console.log("currLatestPurchaseBlock: " + currLatestPurchaseBlock);
+                        //const RemainingTax = (((3n * currTaxperiod * currSellPrice) / (52560n)) - (3n * (currBlockTime - currLatestPurchaseBlock) * currSellPrice) / 52560n);
+                        SatsToSeller = currSellPrice + RemainingTax;
+                        console.log("SatsToSeller: " + SatsToSeller);
+                        outPut = {to: await toCashaddr(deriveTokenaddr(currOwnerPKH, "bchtest")), sats: SatsToSeller};
+                        additionalOutputs.push(outPut);
+                        SatsToOracle = ((3n * (PrevPeriodTax - RemainingTax)) / 4n);
+                        console.log("SatsToOracle: " + SatsToOracle);
+
+                        outPut = {to: await toCashaddr(deriveTokenaddr(ORACLE_PUBKEY, "bchtest")), sats: SatsToOracle};
+                        additionalOutputs.push(outPut);
+                    } else if (document.getElementById("resetBtn").checked) {
+                        let ContractFunc = await CurrContract.getContractFunction("ResetOrb");
+                        const sig = await getSignatureTemplate(wallet);
+                        SpendingFunc = await ContractFunc(wallet.getPublicKeyCompressed(), sig);
+                        SatsInNewContract = 1000000n;
+                        nextOwnerPKH = await wallet.getPublicKeyHash();
+                        nextSellPrice = 100000000n;
+                        nextTaxperiod = 144n;
+                        nextLatestPurchaseBlock = BigInt(currBlockTime);
+                        nextNextMsgBlock = BigInt(currBlockTime) + 144n;
+                    }
+
+                    let NextContract = new Contract(
+                                script,
+                                [ORACLE_PUBKEY,
+                                nextOwnerPKH,
+                                padToBytes(bnToHex(nextSellPrice), 8),
+                                padToBytes(bnToHex(nextTaxperiod), 4),
+                                padToBytes(bnToHex(nextLatestPurchaseBlock), 4),
+                                padToBytes(bnToHex(nextNextMsgBlock), 4)],
+                                Network.TESTNET
+                    );
+                    console.log("SatsInNewContract: " + SatsInNewContract);
+                    totalFees = 1500n;
+                    console.log("NextContract: " + JSON.stringify(NextContract, (key, value) => typeof value === 'bigint' ? value.toString() : value));
+
+
+                    inputFunds = spendingUtxo[0]["satoshis"];
+                    console.log("Funds in contract: " + spendingUtxo[0]["satoshis"]);
+
+                    // Consolidate all wallet utxos. Will fail if there is *a lot* of UTXOs
+                    // TODO: only consolidate until the inputFunds are sufficient
+                    walletutxo = await wallet.getUtxos();
+                    const walletUtxos = walletutxo.map(toCashScript);
+                    walletInputs = Array();
+                    for (w in walletUtxos) {
+                        totalFees += 300n;
+                        inputFunds += BigInt(walletUtxos[w]["satoshis"]);
+                        console.log("Adding input: " + walletUtxos[w]["satoshis"]);
+                        if (!arrayEquals(wallet.getPublicKeyHash(), ORACLE_PUBKEY) || BigInt(walletUtxos[w]["satoshis"]) > 546) {
+                            walletInputs.push(walletUtxos[w]);
+                        }
+                    }
+
+                    totalOutputs = SatsInNewContract;
+                    for (a in additionalOutputs) {
+                        totalFees += 300n;
+                        console.log("Adding output: " + additionalOutputs[a]["sats"]);
+                        totalOutputs += additionalOutputs[a]["sats"];
+                    }
+                    console.log("totalOutputs: " + totalOutputs);
+
+                    console.log("contractInput" + JSON.stringify(walletUtxos, (key, value) => typeof value === 'bigint' ? value.toString() : value));
+                    console.log("spendingUtxo" + JSON.stringify(spendingUtxo, (key, value) => typeof value === 'bigint' ? value.toString() : value));
+                    
+                    const change = inputFunds - totalOutputs - totalFees;
+                    console.log("Change: " + change);
+                    console.log("Total fees: " + totalFees);
+                    const sig = await getSignatureTemplate(wallet);
+                    let txn = await SpendingFunc.from(spendingUtxo);
+                    for (w in walletInputs) {
+                        console.log("Adding input: " + JSON.stringify(walletInputs[w], (key, value) => typeof value === 'bigint' ? value.toString() : value));
+                        txn = await txn.fromP2PKH(walletInputs[w], sig);
+                    }
+
+                    outputs = SatsInNewContract;
+                    txn = await txn.to(NextContract.getDepositAddress(), (SatsInNewContract))
+                    for (a in additionalOutputs) {
+                        b = additionalOutputs[a];
+                        console.log("Additional output: " + JSON.stringify(b, (key, value) => typeof value === 'bigint' ? value.toString() : value));
+                        if(b["sats"] == 0) {
+                            txn = await txn.withOpReturn(b["data"]);
+                        } else {
+                            txn = await txn.to(b["to"], b["sats"]);
+                            outputs += b["sats"];
+                        }
+                    }
+                    console.log("outputs: " + outputs);
+
+                    txn = await txn.to(wallet.getDepositAddress(), change)
+                                    .withoutChange()
+                                    .withTime(currBlockTime)
+                                    .send();
+                    location.reload();
+                    //console.log("Tx: " + JSON.stringify(txn, (key, value) => typeof value === 'bigint' ? value.toString() : value ));
+                    //console.log(getBitauthUri(await buildTemplate({contract: CurrContract, transaction: txn})));
+                } catch (err) {
+                    document.getElementById("errorText").innerHTML = "<font color=\"#ff0000\"><b>"+err.message+"</b></font>";
+                    document.getElementById("errorText").style.display = "block";
+                    console.log("Err: " + err.message);
+                }
+            });
+
+
+        });
+
+    </script>
+    <h1>Bitcoin Cash Orb [chipnet]</h1>
+    <div id="errorText" style="display:none"></div>
+    <table>
+    <tr>
+        <td style="vertical-align:top">
+        <h2>Orb Owner</h2>
+        <div id="orbOwner"></div><br />
+        <div id="remainingJuice"></div>
+        <div id="orbCooldown"></div>
+        <div id="currentSellPriceDiv"></div>
+        <div id="currentTaxDiv"></div>
+        <hr />
+        <h2>Orb History</h2>
+        <div id="orbHistory"></div>
+        </td>
+        <td style="vertical-align:top">
+            <h2>User Wallet</h2>
+            <table>
+            <tr><td>Seed: </td><td><form id="seedform"><input type="password" id="seed" /><input type="text" id="derivationpath"  value="m/44'/145'/0'/0/0" />
+                <button type="submit">Submit</button></form></td></tr>
+            <tr><td><form id="showSeed"><input type="checkbox" id="showSeedBox" onchange="toggleShowSheed()" autocomplete="off" /><label for="showSeedBox" action="">Show seed</label></form></td><td><div id="seedDiv"></div></td></tr>
+            <tr><td>Deposit Address: </td><td><div id="deposit"></div></td></tr>
+            <tr><td>Available Funds (sats): </td><td><div id="funds"></div></td></tr>
+            </table>
+            <hr />
+            <h2>Availible actions</h2>
+            <form id="doaction" accept-charset="utf-8">
+                <fieldset>
+                    <legend>Select an Action:</legend>
+                      <div id="askBtnDiv" style="display:none"><input type="radio" id="askBtn" autocomplete="off" onchange="askClicked()" name="action" />
+                      <label for="askBtn">Ask Orb</label></div>
+                      <div id="buyBtnDiv" style="display:none"><input type="radio" id="buyBtn" autocomplete="off" onchange="buyClicked()" name="action" />
+                      <label for="buyBtn">Buy orb</label></div>
+                      <div id="refillBtnDiv" style="display:none"><input type="radio" id="refillBtn" autocomplete="off" onchange="refillClicked()" name="action" />
+                      <label for="refillBtn" action="">Refill orb</label></div>
+                      <div id="resetBtnDiv" style="display:none"><input type="radio" id="resetBtn" autocomplete="off" onchange="resetClicked()" name="action" />
+                      <label for="resetBtn" action="">Reset orb</label></div>
+                </fieldset>
+                <div id="buyForm" style="display:none">
+                    New Price: <input type="number" id="buyPrice" /><br />
+                    Period: <input type="number" id="buyPeriod" /><br />
+                </div>
+                <div id="askForm" style="display:none">
+                    Question: <input type="text" id="askText" /><br />
+                </div>
+                <div id="refillForm" style="display:none">
+                    Additional blocks: <input type="number" id="refillText" /><br />
+                </div>
+                <input type="hidden" id="currOwnerFormVal" />
+                <input type="hidden" id="currSellPriceFormVal" />
+                <input type="hidden" id="currTaxperiodFormVal" />
+                <input type="hidden" id="currLatestPurchaseBlockFormVal" />
+                <input type="hidden" id="currNextMsgBlockFormVal" />
+                <input type="hidden" id="currBlockTime" />
+                <div id="submitDiv" style="display:none"><input type="submit" id="submitAction" value="Buy Orb"/></div>
+            </form>
+                
+                <div id="question" style="display:none"><hr/><form><div id="questionchoice"></div><button type="submit">Answer</button></form></div>
+        </td>
+    </tr>
+
+    </table>
+
+</body>
+</html>
