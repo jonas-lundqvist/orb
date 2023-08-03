@@ -23,6 +23,7 @@ I will probably not do anything with the code here and will most certainly not d
 However, there are some major glaring things to be fixed for anyone that want to fork it:
 * Store transactions in the browser. Currently all transactions are fetched and parsed **every time you refresh the page**. This opens up the whole thing for
 some serious DoS attacks (spam the oracles p2pkh and see the whole thing just kind of die...).
+* Place all needed parameters in an NFT commitment. This way the covenant could always live on the same address.
 * Fee estimation. I kind of just gave up and slapped on a couple of hundreds of sats on each input/output.
 * Input consolidation. Related to above: I just consolidate all inputs each time, so if anyone spams a couple of hundred inputs with dust to a user the webapp is kind of unusable.
 * Everything UX. 'nuff said.

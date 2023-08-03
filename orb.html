@@ -207,7 +207,7 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
         require(tx.outputs[0].lockingBytecode == newContractLock);
 
         // Move all funds to the new contract
-        require(tx.outputs[0].value == tx.inputs[this.activeInputIndex].value);
+        require(tx.outputs[this.activeInputIndex].value == tx.inputs[this.activeInputIndex].value);
     }
 
     function BuyOrb(bytes20 NewOwnerPKH, int NewTaxperiod, int NewPrice) {
@@ -270,12 +270,13 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
     }
 }
 `
+            const IsRegtest = false;
             globalThis.exports = globalThis.exports || {};
             Object.assign(globalThis, await __mainnetPromise);
             Object.assign(globalThis, await __contractPromise);
             let seedForm = document.getElementById("seedform");
 
-            const walletExists = await TestNetWallet.namedExists('user:12345');
+            const walletExists = IsRegtest ? await RegTestWallet.namedExists('user:12345') : await TestNetWallet.namedExists('user:12345');
 
             seedForm.addEventListener("submit", async (e) => {
                 e.preventDefault();
@@ -293,7 +294,7 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
 
             wallet = false;
             if (walletExists) {
-                wallet = await TestNetWallet.named('user:12345');
+                wallet = IsRegtest ? await RegTestWallet.named('user:12345') : await TestNetWallet.named('user:12345');
                 addr = await wallet.getDepositAddress();
                 console.log("Wallet pubkey: " + await wallet.getPublicKeyCompressed());
                 console.log("Wallet pubkeyhash: " + await wallet.getPublicKeyHash());
@@ -347,7 +348,7 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
                 spentUtxoHeigth = 0;
                 newUtxo = false;
                 let decodedTx = false;
-                let parseWallet = await TestNetWallet.watchOnly(Addr);
+                parseWallet = IsRegtest ? await RegTestWallet.watchOnly(Addr) : await TestNetWallet.watchOnly(Addr);
                 const TxHistory = await parseWallet.getRawHistory();
                 
                 console.log("History of address " + Addr + ": " + JSON.stringify(TxHistory));
@@ -377,13 +378,16 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
                     // Parse all new parameters from tx hash
                     const spendingHeight = spentUtxoTx['height'] == "-1" ? "just now" : "at block " + spentUtxoTx['height'];
                     const Bytes = spentUtxo["scriptSig"]["hex"];
+
+                    // The redeem script is 387 bytes
                     const ActionByte = Bytes.substring((Bytes.length-((387+3)*2)-2), (Bytes.length-((387+3)*2)));
                     console.log("ActionByte: " + ActionByte);
                     if (ActionByte == "52") { //OP_2 -- RefillOrb
                         // Refill
-                        NewTaxPeriod = parseInt(changeEndianness(Bytes.substring(2, 6)), 16);
+                        PushSize = parseInt(changeEndianness(Bytes.substring(0, 2)), 4);
+                        NewTaxPeriod = parseInt(changeEndianness(Bytes.substring(2, 2+2*PushSize)), 16);
                         console.log("NewTaxPeriod: " + NewTaxPeriod);
-                        History.push("Refilled " + spendingHeight + " in " + spentUtxoTx['tx_hash']);
+                        History.push("Refilled " + spendingHeight + " in " + spentUtxoTx['tx_hash'] + " with " + NewTaxPeriod);
                     } else if (ActionByte == "51") { // OP_1 -- BuyOrb
                         NewLatestPurchaseBlock = decodedTx["locktime"];
                         pos = 0;
@@ -405,7 +409,7 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
                         push = parseInt(changeEndianness(Bytes.substring(pos, pos+2)), 16);
                         pos += 2;
                         NewOwnerPKH = hexStringToUint8Array(Bytes.substring(pos, pos+(push*2)));
-                        History.push("Orb bought by: "+ toCashaddr(deriveTokenaddr(NewOwnerPKH, "bchtest"))+" for " + SellPrice + " with new price " + NewSellPrice);
+                        History.push("Orb bought by: "+ toCashaddr(deriveTokenaddr(NewOwnerPKH, IsRegtest ? "bchreg" : "bchtest"))+" for " + SellPrice + " with new price " + NewSellPrice);
                     } else if (ActionByte == "00") { //OP_0 -- AskOrb
                         AskTx = await parseWallet.util.decodeTransaction(spentUtxoTx['tx_hash'], true);
                         NewMsgBlock = BigInt(decodedTx["locktime"]) + 144n;
@@ -427,7 +431,7 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
                         NewOwnerPKH = ORACLE_PUBKEY;
                         NewSellPrice = 100000000n;
                         NewLatestPurchaseBlock = decodedTx["locktime"];
-                        NewTaxPeriod = 144;
+                        NewTaxPeriod = 144n;
                         NewMsgBlock = BigInt(decodedTx["locktime"]) + 144n;
                     }
 
@@ -439,37 +443,43 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
                         padToBytes(bnToHex(NewTaxPeriod), 4),
                         padToBytes(bnToHex(NewLatestPurchaseBlock), 4),
                         padToBytes(bnToHex(NewMsgBlock), 4)],
-                        Network.TESTNET
+                        IsRegtest ? Network.REGTEST : Network.TESTNET
                     );
                     return ParseContract(newUtxo, NextContract.getDepositAddress(), OraclePKH, NewOwnerPKH, NewSellPrice, NewTaxPeriod, NewLatestPurchaseBlock, NewMsgBlock, History, OracleAnswers);
                 }
             }
-            let NewContract = new Contract(
+
+            {
+                // This is only for kick-starting a new Orb
+                let NewContract = new Contract(
                         script,
                         [ORACLE_PUBKEY,
                         ORACLE_PUBKEY,
                         padToBytes(bnToHex(100000000n), 8),
                         padToBytes(bnToHex(144n), 4),
-                        padToBytes(bnToHex(159036), 4),
-                        padToBytes(bnToHex(159036n), 4)],
-                        Network.TESTNET
-                    );
-            const depoaddr = await NewContract.getDepositAddress();
-            console.log("depositaddress: " + depoaddr);
+                        padToBytes(bnToHex(159524n), 4),
+                        padToBytes(bnToHex(159524n), 4)],
+                        IsRegtest ? Network.REGTEST : Network.TESTNET
+                );
+                const depoaddr = await NewContract.getDepositAddress();
+                console.log("depositaddress: " + depoaddr);
+            }
 
-            const GenesisUTXO = {"txid":"fb80f47b7be27e7ca7a04e3b75d328b101d246f2b21a4de5d257fdd60018f048","vout":0,"satoshis":1000000,"height":159053};
-            const GenesisAddr = "bchtest:pqt6438zqs0ec5nshjxqkd73252k8n4wzg6zkaflzx";
+            //const GenesisUTXO = {"txid":"a547a212827737b2ef48a2db8999e92ea03e933050b36227023274404cbbb622","vout":0,"satoshis":1000000,"height":311};
+            //const GenesisAddr = "bchreg:pry2l2lvmzl67hjee45n6wjql4scwj957yrlwqgknl";
+            const GenesisUTXO = {"txid":"dc4c3257665b83c7068056cae5e413cd1a6f1b78e074e22d29c855b1e58303bd","vout":0,"satoshis":1000000,"height":159524};
+            const GenesisAddr = "bchtest:pz8cpu8s4gyc563epcuvkna0jymcrgd48utn6ztzsl";
             
-            let conn = new Connection(
-                "bchtest",
-                "wss://chipnet.imaginary.cash:50004"
-            )
+            parseWallet = IsRegtest ? await RegTestWallet.namedExists('user:12345') : await TestNetWallet.namedExists('user:12345');
+
+            let conn = IsRegtest ? new Connection("regtest", "ws://127.0.0.1:60003") : new Connection("bchtest", "wss://chipnet.imaginary.cash:50004");
+
             currentHeight = await conn.networkProvider.getBlockHeight();
 
             // Get all Oracle transactions but keep the "answers"
             let OracleAnswers = {};
-            const OracleAddr = toCashaddr(deriveTokenaddr(ORACLE_PUBKEY, "bchtest"));
-            let OracleWallet = await TestNetWallet.watchOnly(OracleAddr);
+            const OracleAddr = toCashaddr(deriveTokenaddr(ORACLE_PUBKEY, IsRegtest ? "bchreg" : "bchtest"));
+            let OracleWallet = IsRegtest ? await RegTestWallet.watchOnly(OracleAddr) : await TestNetWallet.watchOnly(OracleAddr);
             const OracleHistory = await OracleWallet.getRawHistory();
             for (Tx in OracleHistory) {
                 TxHash = OracleHistory[Tx]["tx_hash"];
@@ -490,9 +500,11 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
                                     ORACLE_PUBKEY,
                                     100000000n,
                                     144n,
-                                    159036,
-                                    159036n,
-                                    Array("Genesis at block 159053"),
+                                    159524n,
+                                    159524n,
+                                    //310n,
+                                    //310n,
+                                    Array("Genesis at block 159524"),
                                     OracleAnswers
                                 );
             console.log("ContractTipParams" + JSON.stringify(ContractTipParams, (key, value) => typeof value === 'bigint' ? value.toString() : value));
@@ -529,7 +541,7 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
 
             document.getElementById("submitAction").style.display = "block";
 
-            document.getElementById("orbOwner").innerHTML = await toCashaddr(deriveTokenaddr(ContractTipParams["OwnerPKH"], "bchtest"));
+            document.getElementById("orbOwner").innerHTML = await toCashaddr(deriveTokenaddr(ContractTipParams["OwnerPKH"], IsRegtest ? "bchreg" : "bchtest"));
             for (hist in ContractTipParams["History"]) {
                 document.getElementById("orbHistory").innerHTML += ContractTipParams["History"][hist].toString() + "<br />";
             }
@@ -554,7 +566,7 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
             actionform.addEventListener("submit", async (e) => {
                 try {
                     e.preventDefault();
-                    wallet = await TestNetWallet.named('user:12345');
+                    wallet = IsRegtest ? await RegTestWallet.named('user:12345') : await TestNetWallet.named('user:12345');
 
                     ownerArr = document.getElementById("currOwnerFormVal").value.split(",");
                     currOwnerArr = Array();
@@ -576,7 +588,7 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
                                 padToBytes(bnToHex(currTaxperiod), 4),
                                 padToBytes(bnToHex(currLatestPurchaseBlock), 4),
                                 padToBytes(bnToHex(currNextMsgBlock), 4)],
-                                Network.TESTNET
+                                IsRegtest ? Network.REGTEST : Network.TESTNET
                     );
 
                     let SpendingFunc = false;
@@ -601,7 +613,7 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
                         console.log("currBlockTime: " + currBlockTime);
                         outPut = {data: ["ORBQ", document.getElementById("askText").value], sats: 0n};
                         additionalOutputs.push(outPut);
-                        outPut = {to: await toCashaddr(deriveTokenaddr(ORACLE_PUBKEY, "bchtest")), sats: 546n };
+                        outPut = {to: await toCashaddr(deriveTokenaddr(ORACLE_PUBKEY, IsRegtest ? "bchreg" : "bchtest")), sats: 546n };
                         additionalOutputs.push(outPut);
                     } else  if (document.getElementById("buyBtn").checked) {
                         nextOwnerPKH = await wallet.getPublicKeyHash();
@@ -622,12 +634,12 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
                         //const RemainingTax = (((3n * currTaxperiod * currSellPrice) / (52560n)) - (3n * (currBlockTime - currLatestPurchaseBlock) * currSellPrice) / 52560n);
                         SatsToSeller = currSellPrice + RemainingTax;
                         console.log("SatsToSeller: " + SatsToSeller);
-                        outPut = {to: await toCashaddr(deriveTokenaddr(currOwnerPKH, "bchtest")), sats: SatsToSeller};
+                        outPut = {to: await toCashaddr(deriveTokenaddr(currOwnerPKH, IsRegtest ? "bchreg" : "bchtest")), sats: SatsToSeller};
                         additionalOutputs.push(outPut);
                         SatsToOracle = ((3n * (PrevPeriodTax - RemainingTax)) / 4n);
                         console.log("SatsToOracle: " + SatsToOracle);
 
-                        outPut = {to: await toCashaddr(deriveTokenaddr(ORACLE_PUBKEY, "bchtest")), sats: SatsToOracle};
+                        outPut = {to: await toCashaddr(deriveTokenaddr(ORACLE_PUBKEY, IsRegtest ? "bchreg" : "bchtest")), sats: SatsToOracle};
                         additionalOutputs.push(outPut);
                     } else if (document.getElementById("resetBtn").checked) {
                         let ContractFunc = await CurrContract.getContractFunction("ResetOrb");
@@ -649,7 +661,7 @@ contract Orb(bytes20 OraclePKH, bytes20 OwnerPKH, bytes8 SellPrice, bytes4 TaxPe
                                 padToBytes(bnToHex(nextTaxperiod), 4),
                                 padToBytes(bnToHex(nextLatestPurchaseBlock), 4),
                                 padToBytes(bnToHex(nextNextMsgBlock), 4)],
-                                Network.TESTNET
+                                IsRegtest ? Network.REGTEST : Network.TESTNET
                     );
                     console.log("SatsInNewContract: " + SatsInNewContract);
                     totalFees = 1500n;
